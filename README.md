@@ -34,7 +34,7 @@ database = julanling_g<br>
 hql_path = ./hql_test.sql<br>
 
 -- 存入ES时的分页大小<br>
--- 为了防止结果集过大，导致查询时内存吃不消，建议配置此项，无分页配置时默认分页大小3000<br>
+-- 为了防止结果集过大，导致查询时内存吃不消，建议配置此项，无分页配置时默认分页大小30000<br>
 page_size = 2<br>
 
 [es_bulk]<br>
