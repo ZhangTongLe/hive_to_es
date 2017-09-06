@@ -11,7 +11,7 @@ from elasticsearch import helpers as elasticsearch_helper
 # 在Python3将下行注释
 import configparser as ConfigParser
 
-# Linux环境撤销下两行注释:
+# For Python2.5+
 # reload(sys)
 # sys.setdefaultencoding('utf8')
 
