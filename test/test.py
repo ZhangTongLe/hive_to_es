@@ -26,7 +26,8 @@ Created by tangqingchang on 2017-09-02
 python hive_to_es.py <配置文件路径>
 """
 
-# TODO Impala查询方式
+
+# TODO 适配Impala
 
 def get_list(data, f=','):
     ls = data.split(f)
