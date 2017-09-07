@@ -1,22 +1,28 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
-import sys
 import pyhs2
 import time
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as elasticsearch_helper
-# 在Python2撤销下行注释
-# import ConfigParser as ConfigParser
 
-# 在Python3将下行注释
-import configparser as ConfigParser
+try:
+    # Python3
+    import configparser as ConfigParser
+except:
+    # Python2
+    import ConfigParser
 
-# Linux环境撤销下两行注释:
-# reload(sys)
-# sys.setdefaultencoding('utf8')
+import sys
+from imp import reload
+
+reload(sys)
+
+# For Python2
+sys.setdefaultencoding('utf8')
 
 """
 Created by tangqingchang on 2017-09-02
+环境: python2 
 python hive_to_es.py <配置文件路径>
 """
 
