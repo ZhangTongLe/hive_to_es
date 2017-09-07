@@ -8,11 +8,10 @@ class ImpalaClient:
         self.database = database
         self.impala_conn = connect(host=host, port=port, database=database)
 
-    def exec(self, sql):
+    def query(self, sql):
         impala_cur = self.impala_conn.cursor()
         impala_cur.execute(sql)
         return impala_cur.fetchall()
 
     def close(self):
         self.impala_conn.close()
-
