@@ -24,8 +24,24 @@ sys.setdefaultencoding('utf8')
 """
 Created by tangqingchang on 2017-09-02
 环境: python2 
-python hive_to_es.py <配置文件路径>
+python hive_to_es.py config=<配置文件路径>
 """
+
+
+def get_map(param_list):
+    """
+    解析键值对形式的参数数组，返回dict
+    :param param_list: 参数数组，如sys.argv
+    :return:
+    """
+
+    param_dict = {}
+
+    for pair in param_list:
+        ls = pair.split('=')
+        param_dict[ls[0]] = ls[1]
+
+    return param_dict
 
 
 def get_list(data, f=','):
@@ -100,8 +116,10 @@ if len(sys.argv) < 2:
     log("参数不足")
     exit(0)
 
+params_dict = get_map(sys.argv[1:])
+
 config = ConfigParser.ConfigParser()
-config.readfp(open(sys.argv[1], "r"))
+config.readfp(open(params_dict['config'], "r"))
 
 HQL_PATH = config.get("hive", "hql_path")
 MAX_PAGE_SIZE = 30000
@@ -124,23 +142,15 @@ log(">>>>>>>>>>初始化结束>>>>>>>>>>")
 
 # 开始记录时间
 start_time = time.time()
-try:
-    es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
-                       http_auth=(config.get("es", "username"),
-                                  config.get("es", "password")))
-except:
-    log("ES连接出错")
-    exit(0)
+es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
+                   http_auth=(config.get("es", "username"),
+                              config.get("es", "password")))
 
-try:
-    hive_conn = pyhs2.connect(host=config.get("hive", "host"),
-                              port=config.get("hive", "port"),
-                              authMechanism=config.get("hive", "authMechanism"),
-                              user=config.get("hive", "user"),
-                              database=config.get("hive", "database"))
-except:
-    log("Hive连接出错")
-    exit(0)
+hive_conn = pyhs2.connect(host=config.get("hive", "host"),
+                          port=config.get("hive", "port"),
+                          authMechanism=config.get("hive", "authMechanism"),
+                          user=config.get("hive", "user"),
+                          database=config.get("hive", "database"))
 
 USER_HQL = get_file_content(HQL_PATH).lstrip()
 if not (USER_HQL.startswith("select") or USER_HQL.startswith("SELECT")):
@@ -213,15 +223,15 @@ for p in range(0, page_count):
     # log("该页结果：")
     log("获得查询结果")
     for r in hive_result:
-        src_list = []
+        _source = {}
         obj = {}
         for i in range(0, len(es_columns)):
             # r[i+1]是因为第一个字段是用于分页依据的row_number，不需要放入结果集合
-            src_list.append((es_columns[i], r[i + 1]))
-            _source = dict(src_list)
-            # ('_id', r[0]),
-            obj_list = [('_index', ES_INDEX), ('_type', ES_TYPE), ('_source', _source)]
-            obj = dict(obj_list)
+            _source[es_columns[i]] = r[i + 1]
+
+        obj['_index'] = ES_INDEX
+        obj['_type'] = ES_TYPE
+        obj['_source'] = _source
 
         # log(obj)
         actions.append(obj)
