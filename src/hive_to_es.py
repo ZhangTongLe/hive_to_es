@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
-import pyhs2
 import time
+
+import pyhs2
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as elasticsearch_helper
 
