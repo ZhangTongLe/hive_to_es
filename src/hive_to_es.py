@@ -26,7 +26,7 @@ Created by tangqingchang on 2017-09-02
 环境: python2 
 python hive_to_es.py config=<配置文件路径>
 """
-
+# TODO 多结果集合导入ES
 
 def get_map(param_list):
     """
