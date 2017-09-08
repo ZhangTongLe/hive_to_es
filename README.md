@@ -15,7 +15,7 @@
 脚本使用说明<br>
 
 环境: Python2<br>
-命令 #python hive_to_es.py <配置文件目录><br>
+命令 #python hive_to_es.py config=<配置文件目录><br>
 
 
 配置文件使用说明： 使用.ini后缀的配置文件<br>
