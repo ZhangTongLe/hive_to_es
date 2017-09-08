@@ -55,9 +55,11 @@ def get_time():
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
 
 
-def log(content):
+def log(*content):
     sys.stdout.write("[{t}]".format(t=get_time()))
-    print(content)
+    for c in content:
+        sys.stdout.write(str(c))
+    print("")
 
 
 def s2m(seconds):
@@ -136,10 +138,10 @@ ES_TYPE = config.get("es_bulk", "type")
 
 PAGE_SIZE = min(PAGE_SIZE, MAX_PAGE_SIZE)
 
-log("HQL文件: " + HQL_PATH)
-log("ES_INDEX: " + ES_INDEX)
-log("ES_TYPE: " + ES_TYPE)
-log("分页大小: " + str(PAGE_SIZE))
+log("HQL文件: ", HQL_PATH)
+log("ES_INDEX: ", ES_INDEX)
+log("ES_TYPE: ", ES_TYPE)
+log("分页大小: ", PAGE_SIZE)
 log(">>>>>>>>>>初始化结束>>>>>>>>>>")
 
 # 开始记录时间
@@ -159,7 +161,7 @@ if not (USER_HQL.startswith("select") or USER_HQL.startswith("SELECT")):
     log("只允许SELECT语句")
     exit(0)
 
-log("HQL文件内容: " + USER_HQL)
+log("HQL文件内容: ", USER_HQL)
 
 # es准备
 if es.indices.exists(index=ES_INDEX) is True:
@@ -178,13 +180,13 @@ if es.indices.exists(index=ES_INDEX) is True:
 else:
     log("增量添加结果集")
     es.indices.create(index=ES_INDEX)
-    log("已新创建index：" + ES_INDEX)
+    log("已新创建index：", ES_INDEX)
 
 es_columns = get_list(config.get("es_bulk", "columns"))
-log("插入到ES的各个字段(es_columns): " + str(es_columns))
+log("插入到ES的各个字段(es_columns): ", es_columns)
 
 prepare_hql = ("SELECT COUNT(*), MIN(row_number) FROM (" + add_row_number_into_hql(USER_HQL) + ")t_count")
-log("Prepare HQL: " + prepare_hql)
+log("Prepare HQL: ", prepare_hql)
 log("开始获取总行数和分页起始行...")
 
 pre_result = run_hive_query(prepare_hql)
@@ -199,21 +201,21 @@ current_row_num = int(pre_result[0][1])
 
 page_count = int((total_count + PAGE_SIZE - 1) / PAGE_SIZE)
 
-log("结果集合总数: " + str(total_count))
-log("分页大小: " + str(PAGE_SIZE))
-log("总页数: " + str(page_count))
-log("起始行：" + str(current_row_num))
+log("结果集合总数: ", total_count)
+log("分页大小: ", PAGE_SIZE)
+log("总页数: ", page_count)
+log("起始行：", current_row_num)
 
 # 开始查询
 for p in range(0, page_count):
     log("==================第%s页开始===================" % (p + 1))
     s = time.time()
-    log("当前行: " + str(current_row_num))
+    log("当前行: ", current_row_num)
 
     start_row = current_row_num
     to_row = current_row_num + PAGE_SIZE - 1
-    log("开始行号: " + str(start_row))
-    log("结束行号: " + str(to_row))
+    log("开始行号: ", start_row)
+    log("结束行号: ", to_row)
 
     final_hql = add_paging_limit_into_hql(USER_HQL, start_row, to_row)
 
@@ -243,8 +245,8 @@ for p in range(0, page_count):
         elasticsearch_helper.bulk(es, actions)
     log("插入ES结束...")
     e = time.time()
-    log("该页查询时间：" + str(s2m(e - s)))
+    log("该页查询时间：", s2m(e - s))
     current_row_num = current_row_num + PAGE_SIZE
 
 end_time = time.time()
-log(">>>>>>>>>>>>>>>>全部结束，花费时间：" + str(s2m(end_time - start_time)) + ">>>>>>>>>>>>>>>>")
+log(">>>>>>>>>>>>>>>>全部结束，花费时间：", s2m(end_time - start_time), ">>>>>>>>>>>>>>>>")
