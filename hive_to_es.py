@@ -178,7 +178,6 @@ if es.indices.exists(index=ES_INDEX) is True:
         log("增量添加结果集")
         pass
 else:
-    log("增量添加结果集")
     es.indices.create(index=ES_INDEX)
     log("已新创建index：", ES_INDEX)
 
