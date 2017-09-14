@@ -75,7 +75,9 @@ def get_file_content(path):
     :return:
     """
     f = open(path, 'r')
-    return f.read()
+    data = f.read()
+    f.close()
+    return data
 
 
 def run_hive_query(hql):

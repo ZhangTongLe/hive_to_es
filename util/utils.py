@@ -10,7 +10,9 @@ class FileUtil:
         :return:
         """
         f = open(path, 'r')
-        return f.read()
+        data = f.read()
+        f.close()
+        return data
 
     @staticmethod
     def get_file_content_by_encoding(path, encoding):
