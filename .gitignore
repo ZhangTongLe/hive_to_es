@@ -2,6 +2,7 @@
 docs/
 get_data_from_mysql/
 sql/
-user_action_per_day.py
+user_action*.py
 config
 
+test.py

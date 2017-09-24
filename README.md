@@ -21,7 +21,7 @@
 配置文件使用说明： 使用.ini后缀的配置文件<br>
 
 [es]<br>
--- Elasticserch地址、用户名、密码<br>
+-- Elasticsearch地址、用户名、密码<br>
 hosts = 192.168.2.100:9200<br>
 username = elastic<br>
 password = 888888<br>
