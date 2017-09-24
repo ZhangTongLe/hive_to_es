@@ -1,8 +1,1 @@
 .idea/
-docs/
-get_data_from_mysql/
-sql/
-user_action*.py
-config
-
-test.py
