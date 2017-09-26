@@ -51,3 +51,7 @@ columns = role_name,role_id<br>
 -- 存入ES的目标index和type<br>
 index = tqc_test<br>
 type = tqc_test_type<br>
+
+
+-- 导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认不配置，不会清空原来数据<br>
+overwrite = true

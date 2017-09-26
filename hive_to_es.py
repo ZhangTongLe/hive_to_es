@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
+import logging
 import time
 
 import pyhs2
@@ -55,11 +56,19 @@ def get_time():
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
 
 
+logging.basicConfig(level=logging.INFO)
+
+
 def log(*content):
-    sys.stdout.write("[{t}]".format(t=get_time()))
+    """
+    输出日志
+    :param content:
+    :return:
+    """
+    log_content = "[{t}]".format(t=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
     for c in content:
-        sys.stdout.write(str(c))
-    print("")
+        log_content += str(c)
+    logging.info(log_content)
 
 
 def s2m(seconds):
@@ -169,7 +178,7 @@ log("HQL文件内容: ", USER_HQL)
 if es.indices.exists(index=ES_INDEX) is True:
 
     try:
-        if config.get("es_bulk", "overwrite") is not None:
+        if config.get("es_bulk", "overwrite") == "true":
             log("全量添加结果集")
             # 删除type下所有数据
             es.delete_by_query(index=ES_INDEX,
