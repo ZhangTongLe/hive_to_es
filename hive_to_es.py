@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
+import codecs
 import logging
 import time
 
@@ -83,9 +84,9 @@ def get_file_content(path):
     :param path:
     :return:
     """
-    f = open(path, 'r')
-    data = f.read()
-    f.close()
+    file = codecs.open(path, 'r+', 'utf-8', 'ignore')
+    data = file.read()
+    file.close()
     return data
 
 
@@ -109,10 +110,10 @@ def add_row_number_into_hql(hql):
     :return:
     """
     ql = hql.lstrip()
-    start_pos = len("SELECT")
-    left = ql[:start_pos + 1]
+    start_pos = hql.upper().find("FROM ")
+    left = ql[:start_pos]
     right = ql[start_pos:]
-    left = left + "ROW_NUMBER() OVER () AS row_number,"
+    left = left + ",ROW_NUMBER() OVER () AS row_number "
     return "SELECT * FROM(" + left + right + ")t_paging"
 
 
@@ -134,29 +135,7 @@ if len(sys.argv) < 2:
 params_dict = get_map(sys.argv[1:])
 
 config = ConfigParser.ConfigParser()
-config.readfp(open(params_dict['config'], "r"))
-
-HQL_PATH = config.get("hive", "hql_path")
-MAX_PAGE_SIZE = 30000
-try:
-    PAGE_SIZE = int(config.get("hive", "page_size"))
-except:
-    log("没有找到分页配置，使用默认值")
-    PAGE_SIZE = MAX_PAGE_SIZE
-
-ES_INDEX = config.get("es_bulk", "index")
-ES_TYPE = config.get("es_bulk", "type")
-
-PAGE_SIZE = min(PAGE_SIZE, MAX_PAGE_SIZE)
-
-log("HQL文件: ", HQL_PATH)
-log("ES_INDEX: ", ES_INDEX)
-log("ES_TYPE: ", ES_TYPE)
-log("分页大小: ", PAGE_SIZE)
-log(">>>>>>>>>>初始化结束>>>>>>>>>>")
-
-# 开始记录时间
-start_time = time.time()
+config.readfp(open(params_dict['config'], mode='r+'))
 es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
                    http_auth=(config.get("es", "username"),
                               config.get("es", "password")))
@@ -167,96 +146,148 @@ hive_conn = pyhs2.connect(host=config.get("hive", "host"),
                           user=config.get("hive", "user"),
                           database=config.get("hive", "database"))
 
-USER_HQL = get_file_content(HQL_PATH).lstrip()
-if not (USER_HQL.startswith("select") or USER_HQL.startswith("SELECT")):
-    log("只允许SELECT语句")
-    exit(0)
 
-log("HQL文件内容: ", USER_HQL)
+def run_job(job_config):
+    """
+     一个任务
+    :return:
+    """
+    log("*************************", job_config['job'], "开始*************************")
+    HQL_PATH = job_config["hql_path"]
+    MAX_PAGE_SIZE = 30000
+    PAGING_ENABLE = True
+    try:
+        PAGE_SIZE = job_config["page_size"]
+    except:
+        log("没有找到分页配置，使用默认值")
+        PAGING_ENABLE = False
+        PAGE_SIZE = MAX_PAGE_SIZE
 
-# es准备
-if es.indices.exists(index=ES_INDEX) is True:
+    ES_INDEX = job_config["es_index"]
+    ES_TYPE = job_config["es_type"]
+
+    PAGE_SIZE = min(PAGE_SIZE, MAX_PAGE_SIZE)
+
+    log("HQL文件: ", HQL_PATH)
+    log("ES_INDEX: ", ES_INDEX)
+    log("ES_TYPE: ", ES_TYPE)
+    log("分页大小: ", PAGE_SIZE)
+    log(">>>>>>>>>>初始化结束>>>>>>>>>>")
+
+    # 开始记录时间
+    start_time = time.time()
+
+    USER_HQL = get_file_content(HQL_PATH).lstrip()
+    if not (USER_HQL.startswith("select") or USER_HQL.startswith("SELECT")):
+        log("只允许SELECT语句")
+        exit(0)
+
+    log("HQL文件内容: ", USER_HQL)
+
+    # es准备
+    if es.indices.exists(index=ES_INDEX) is True:
+        try:
+            if job_config["overwrite"] == "true":
+                log("全量添加结果集")
+                # 删除type下所有数据
+                es.delete_by_query(index=ES_INDEX,
+                                   body={"query": {"match_all": {}}},
+                                   doc_type=ES_TYPE,
+                                   params={"conflicts": "proceed"})
+        except:
+            log("增量添加结果集")
+            pass
+    else:
+        es.indices.create(index=ES_INDEX)
+        log("已新创建index：", ES_INDEX)
+
+    es_columns = get_list(job_config["columns"])
+    log("插入到ES的各个字段(es_columns): ", es_columns)
+
+    total_count = PAGE_SIZE
+    current_row_num = 1
+
+    if PAGING_ENABLE is True:
+        prepare_hql = ("SELECT COUNT(*), MIN(row_number) FROM (" + add_row_number_into_hql(USER_HQL) + ")t_count")
+        log("Prepare HQL: ", prepare_hql)
+
+        log("开始获取总行数和分页起始行...")
+        pre_result = run_hive_query(prepare_hql)
+        total_count = int(pre_result[0][0])
+
+        if total_count == 0:
+            log("数据结果为0，退出")
+            return
+        current_row_num = int(pre_result[0][1])
+
+    page_count = int((total_count + PAGE_SIZE - 1) / PAGE_SIZE)
+
+    log("结果集合总数: ", total_count)
+    log("分页大小: ", PAGE_SIZE)
+    log("总页数: ", page_count)
+    log("起始行：", current_row_num)
+
+    # 开始查询
+    for p in range(0, page_count):
+        log("==================第%s页开始===================" % (p + 1))
+        s = time.time()
+        log("当前行: ", current_row_num)
+
+        start_row = current_row_num
+        to_row = current_row_num + PAGE_SIZE - 1
+        log("开始行号: ", start_row)
+        log("结束行号: ", to_row)
+
+        final_hql = add_paging_limit_into_hql(USER_HQL, start_row, to_row)
+
+        log("开始执行: ")
+        log(final_hql)
+        hive_result = run_hive_query(final_hql)
+
+        actions = []
+        # log("该页结果：")
+        log("获得查询结果")
+        for r in hive_result:
+            _source = {}
+            obj = {}
+            for i in range(0, len(es_columns)):
+                _source[es_columns[i]] = r[i]
+
+            obj['_index'] = ES_INDEX
+            obj['_type'] = ES_TYPE
+            obj['_source'] = _source
+
+            # log(obj)
+            actions.append(obj)
+
+        log("开始插入结果到ES...")
+        if len(actions) > 0:
+            elasticsearch_helper.bulk(es, actions)
+        log("插入ES结束...")
+        e = time.time()
+        log("该页查询时间：", s2m(e - s))
+        current_row_num = current_row_num + PAGE_SIZE
+
+    end_time = time.time()
+    log("************************", job_config['job'], ": 全部结束，花费时间：", s2m(end_time - start_time),
+        "************************")
+
+
+jobs = get_list(config.get("job", "jobs"))
+for job in jobs:
+    job_conf = dict()
+
+    job_conf['job'] = job
+
+    job_conf['hql_path'] = config.get(job, "hql_path")
+    job_conf['es_index'] = config.get(job, "es_index")
+    job_conf['es_type'] = config.get(job, "es_type")
+    job_conf['columns'] = config.get(job, "columns")
 
     try:
-        if config.get("es_bulk", "overwrite") == "true":
-            log("全量添加结果集")
-            # 删除type下所有数据
-            es.delete_by_query(index=ES_INDEX,
-                               body={"query": {"match_all": {}}},
-                               doc_type=ES_TYPE,
-                               params={"conflicts": "proceed"})
+        job_conf['page_size'] = config.get(job, "page_size")
+        job_conf['overwrite'] = config.get(job, "overwrite")
     except:
-        log("增量添加结果集")
         pass
-else:
-    es.indices.create(index=ES_INDEX)
-    log("已新创建index：", ES_INDEX)
 
-es_columns = get_list(config.get("es_bulk", "columns"))
-log("插入到ES的各个字段(es_columns): ", es_columns)
-
-prepare_hql = ("SELECT COUNT(*), MIN(row_number) FROM (" + add_row_number_into_hql(USER_HQL) + ")t_count")
-log("Prepare HQL: ", prepare_hql)
-log("开始获取总行数和分页起始行...")
-
-pre_result = run_hive_query(prepare_hql)
-log(pre_result)
-total_count = int(pre_result[0][0])
-
-if total_count == 0:
-    log("数据结果为0，退出")
-    exit(0)
-
-current_row_num = int(pre_result[0][1])
-
-page_count = int((total_count + PAGE_SIZE - 1) / PAGE_SIZE)
-
-log("结果集合总数: ", total_count)
-log("分页大小: ", PAGE_SIZE)
-log("总页数: ", page_count)
-log("起始行：", current_row_num)
-
-# 开始查询
-for p in range(0, page_count):
-    log("==================第%s页开始===================" % (p + 1))
-    s = time.time()
-    log("当前行: ", current_row_num)
-
-    start_row = current_row_num
-    to_row = current_row_num + PAGE_SIZE - 1
-    log("开始行号: ", start_row)
-    log("结束行号: ", to_row)
-
-    final_hql = add_paging_limit_into_hql(USER_HQL, start_row, to_row)
-
-    log("开始执行: ")
-    log(final_hql)
-    hive_result = run_hive_query(final_hql)
-
-    actions = []
-    # log("该页结果：")
-    log("获得查询结果")
-    for r in hive_result:
-        _source = {}
-        obj = {}
-        for i in range(0, len(es_columns)):
-            # r[i+1]是因为第一个字段是用于分页依据的row_number，不需要放入结果集合
-            _source[es_columns[i]] = r[i + 1]
-
-        obj['_index'] = ES_INDEX
-        obj['_type'] = ES_TYPE
-        obj['_source'] = _source
-
-        # log(obj)
-        actions.append(obj)
-
-    log("开始插入结果到ES...")
-    if len(actions) > 0:
-        elasticsearch_helper.bulk(es, actions)
-    log("插入ES结束...")
-    e = time.time()
-    log("该页查询时间：", s2m(e - s))
-    current_row_num = current_row_num + PAGE_SIZE
-
-end_time = time.time()
-log(">>>>>>>>>>>>>>>>全部结束，花费时间：", s2m(end_time - start_time), ">>>>>>>>>>>>>>>>")
+    run_job(job_conf)

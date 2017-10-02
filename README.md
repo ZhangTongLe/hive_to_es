@@ -20,38 +20,55 @@
 
 配置文件使用说明： 使用.ini后缀的配置文件<br>
 
-[es]<br>
--- Elasticsearch地址、用户名、密码<br>
-hosts = 192.168.2.100:9200<br>
-username = elastic<br>
-password = 888888<br>
+```ini
 
-[hive]<br>
--- Hive地址、端口、数据库名、用户等配置<br>
+# Elasticsearch地址、用户名、密码
+[es]
+hosts = 192.168.5.200:9200
+username = elastic
+password = 888888
 
-host = 127.0.0.1<br>
-port = 10000<br>
-authMechanism = PLAIN<br>
-user = sa_cluster<br>
-database = julanling_g<br>
+# Hive地址、端口、数据库名、用户等配置
+[hive]
+host = 127.0.0.1
+port = 10000
+authMechanism = PLAIN
+user = hive_user
+database = dbname
 
--- HiveQL文件位置<br>
-hql_path = ./hql_test.sql<br>
+# 自定义job，一个job相当于一个任务，多个job可以同时导多个结果集到ES，定义了job之后，该job的各项配置要单独再给出
+[job]
+jobs = jobb,joba
 
--- 存入ES时的分页大小<br>
--- 为了防止结果集过大，导致查询时内存吃不消，建议配置此项，无分页配置时默认分页大小30000<br>
-page_size = 2<br>
+[joba]
+# 存入ES的目标index和type
+es_index = tqc_test
+es_type = tqc_test1_type
 
-[es_bulk]<br>
--- 存入ES时，定义一个文档中的各个字段名称，注意与查询结果的各个字段按顺序对应，才能得到对应正确的数据值<br>
--- 如该例的HQL为select r_name, r_id from user_role<br>
--- ES文档：{"role_name": "xxx", "role_id":123}<br>
-columns = role_name,role_id<br>
+# 存入ES时，定义一个文档中的各个字段名称，注意与查询结果的各个字段按顺序对应，才能得到对应正确的数据值
+# 如该例的HQL为SELECT `name`, `age` FROM student
+# ES文档：{"es_name": "xxx", "es_age":12}
+columns = es_name,es_age
 
--- 存入ES的目标index和type<br>
-index = tqc_test<br>
-type = tqc_test_type<br>
+# HiveQL文件位置
+hql_path = ./sql/hql_test.sql
+
+# 存入ES时的分页大小
+# 为了防止结果集过大，导致查询时内存吃不消，无分页配置时默认分页大小30000
+page_size = 1000
+
+# 导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认没有配置，不会清空原来数据
+;overwrite = true
+
+# jobb配置类似如上
+[jobb]
+es_index = tqc_test
+es_type = tqc_test2_type
+columns = es_id, es_address
+hql_path = ./sql/hql_test_2.sql
+
+page_size = 1000
+;overwrite = true
 
 
--- 导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认不配置，不会清空原来数据<br>
-overwrite = true
+```
