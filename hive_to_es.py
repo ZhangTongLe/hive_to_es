@@ -3,11 +3,15 @@
 import codecs
 import logging
 import time
+import sys
 
-import pyhs2
+from impala.dbapi import connect as big_data_connection
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as elasticsearch_helper
 
+from imp import reload
+
+reload(sys)
 try:
     # Python3
     import configparser as ConfigParser
@@ -15,13 +19,7 @@ except:
     # Python2
     import ConfigParser
 
-import sys
-from imp import reload
-
-reload(sys)
-
-# For Python2
-sys.setdefaultencoding('utf8')
+    sys.setdefaultencoding('utf8')
 
 """
 Created by tangqingchang on 2017-09-02
@@ -37,9 +35,12 @@ def get_map(param_list):
     :return:
     """
     param_dict = {}
-    for pair in param_list:
-        ls = pair.split('=')
-        param_dict[ls[0]] = ls[1]
+    try:
+        for pair in param_list:
+            ls = pair.split('=')
+            param_dict[ls[0]] = ls[1]
+    except:
+        return {}
     return param_dict
 
 
@@ -92,42 +93,69 @@ def get_file_content(path):
     return data
 
 
-def run_hive_query(hql):
+def run_query(sql):
     """
-    跑hiveQL
-    :param hql:
+    执行mpala-SQL或者hiveQL获得结果
+    :param sql:
     :return:
     """
-    with hive_conn.cursor() as cursor:
-        cursor.execute(hql)
-        res = cursor.fetchall()
-        cursor.close()
-        return res
+    cur = big_data_conn.cursor()
+    cur.execute(sql)
+    des = cur.description
+    res = cur.fetchall()
+    res_data = []
+
+    # 拼接成字典
+    for r in res:
+        d = dict()
+        for i, v in enumerate(r):
+            if '.' in des[i][0]:
+                d[des[i][0].split('.')[1]] = v
+                pass
+            else:
+                d[des[i][0]] = v
+        res_data.append(d)
+    return res_data
 
 
-def add_row_number_into_hql(hql):
+def add_row_number_into_sql(sql):
     """
-    拼接为支持分页的HQL
-    :param hql:
+    拼接为支持分页的SQL
+    :param sql:
     :return:
     """
-    ql = hql.lstrip()
-    start_pos = hql.upper().find("FROM ")
+    ql = sql.lstrip()
+    start_pos = sql.upper().find("FROM ")
     left = ql[:start_pos]
     right = ql[start_pos:]
     left = left + ",ROW_NUMBER() OVER () AS row_number "
     return "SELECT * FROM(" + left + right + ")t_paging"
 
 
-def add_paging_limit_into_hql(hql, start_row, to_row):
+def add_paging_limit_into_sql(sql, start_row, to_row):
     """
-    拼接为支持分页的HQL，加入分页信息
-    :param hql:
+    拼接为支持分页的SQL，加入分页信息
+    :param sql:
     :param start_row:
     :param to_row:
     :return:
     """
-    return add_row_number_into_hql(hql) + " WHERE row_number BETWEEN " + str(start_row) + " AND " + str(to_row)
+    return add_row_number_into_sql(sql) + " WHERE row_number BETWEEN " + str(start_row) + " AND " + str(to_row)
+
+
+def get_config_fallback(conf, k, v, fallback):
+    """
+    获取不到配置信息时返回fallback
+    :param conf:
+    :param k:
+    :param v:
+    :param fallback:
+    :return:
+    """
+    try:
+        return conf.get(k, v)
+    except:
+        return fallback
 
 
 if len(sys.argv) < 2:
@@ -142,18 +170,18 @@ es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
                    http_auth=(config.get("es", "username"),
                               config.get("es", "password")))
 
-hive_conn = pyhs2.connect(host=config.get("hive", "host"),
-                          port=config.get("hive", "port"),
-                          authMechanism=config.get("hive", "authMechanism"),
-                          user=config.get("hive", "user"),
-                          database=config.get("hive", "database"))
+# TODO 引入impala渠道导数据
+by = get_config_fallback(config, "es", "by", fallback="hive")
+log("导数据途径：", by)
+big_data_conn = big_data_connection(host=config.get(by, "host"),
+                                    port=config.get(by, "port"),
+                                    database=config.get(by, "database"),
+                                    user=get_config_fallback(config, by, "user", fallback=""),
+                                    auth_mechanism=get_config_fallback(config, by, "auth_mechanism", fallback=""),
+                                    )
 
 DEFAULT_ES_INDEX = config.get("es", "default_index")
-
-try:
-    MAX_PAGE_SIZE = config.get("paging", "max_page_size")
-except:
-    MAX_PAGE_SIZE = 30000
+MAX_PAGE_SIZE = int(get_config_fallback(config, "paging", "max_page_size", fallback=30000))
 
 
 def run_job(job_config):
@@ -165,28 +193,28 @@ def run_job(job_config):
     PAGE_SIZE = job_config["page_size"]
     ES_INDEX = job_config["es_index"]
     ES_TYPE = job_config["es_type"]
-    ES_COLUMNS = get_list(job_config["columns"])
+    COLUMN_MAPPING = job_config['column_mapping']
     OVERWRITE = job_config["overwrite"]
 
-    try:
-        HQL_PATH = job_config["hql_path"]
-        log("HQL文件: ", HQL_PATH)
+    if len(job_config["sql_path"]) > 0:
+        SQL_PATH = job_config["sql_path"]
+        log("SQL文件: ", SQL_PATH)
         try:
-            USER_HQL = get_file_content(HQL_PATH).strip()
+            USER_SQL = get_file_content(SQL_PATH).strip()
         except:
-            log("读取HQL文件出错，退出")
+            log("读取SQL文件出错，退出")
             return
-    except:
-        log("无HQL文件，直接导表数据")
-        USER_HQL = "SELECT * FROM " + job_config['table']
+    else:
+        log("无SQL文件，直接导表数据")
+        USER_SQL = "SELECT * FROM " + job_config['table']
 
     log("ES_INDEX: ", ES_INDEX)
     log("ES_TYPE: ", ES_TYPE)
     log("分页大小: ", PAGE_SIZE)
     log("是否全量：", OVERWRITE)
-    log("ES文档各个字段: ", ES_COLUMNS)
-    log("原始HQL内容: ", USER_HQL)
-    if not (USER_HQL.startswith("select") or USER_HQL.startswith("SELECT")):
+    log("字段名称映射：", COLUMN_MAPPING)
+    log("原始SQL内容: ", USER_SQL)
+    if not (USER_SQL.startswith("select") or USER_SQL.startswith("SELECT")):
         log("只允许SELECT语句, 退出该任务")
         return
 
@@ -195,18 +223,19 @@ def run_job(job_config):
     # 开始记录时间
     start_time = time.time()
 
-    prepare_hql = ("SELECT COUNT(*), MIN(row_number) FROM (" + add_row_number_into_hql(USER_HQL) + ")t_count")
-    log("Prepare HQL: ", prepare_hql)
+    prepare_sql = ("SELECT COUNT(*) AS c, MIN(row_number) AS m FROM (" + add_row_number_into_sql(USER_SQL) + ")t_count")
+    log("Prepare SQL: ", prepare_sql)
     try:
         log("开始获取总行数和分页起始行...")
-        pre_result = run_hive_query(prepare_hql)
-        total_count = int(pre_result[0][0])
+        pre_result = run_query(prepare_sql)
+        total_count = int(pre_result[0]['c'])
+        current_row_num = int(pre_result[0]['m'])
+
         if total_count == 0:
             log("数据结果为0，退出该任务")
             return
-        current_row_num = int(pre_result[0][1])
     except Exception as e:
-        log("获取分页信息HQL执行失败，退出该任务：", e)
+        log("获取分页信息SQL执行失败，退出该任务：", e)
         return
 
     page_count = int((total_count + PAGE_SIZE - 1) / PAGE_SIZE)
@@ -243,25 +272,32 @@ def run_job(job_config):
         log("开始行号: ", start_row)
         log("结束行号: ", to_row)
 
-        final_hql = add_paging_limit_into_hql(USER_HQL, start_row, to_row)
+        final_sql = add_paging_limit_into_sql(USER_SQL, start_row, to_row)
 
         try:
             log("开始执行: ")
-            log(final_hql)
-            hive_result = run_hive_query(final_hql)
+            log(final_sql)
+            hive_result = run_query(final_sql)
         except Exception as e:
-            log(">>>>>>>>>>>>>>>HQL执行失败，结束该任务：", e, ">>>>>>>>>>>>>>>>>>")
+            log(">>>>>>>>>>>>>>>SQL执行失败，结束该任务：", e, ">>>>>>>>>>>>>>>>>>")
             return
 
         actions = []
         for r in hive_result:
-            _source = {}
-            obj = {}
-            for i in range(0, len(ES_COLUMNS)):
-                _source[ES_COLUMNS[i]] = r[i]
+            _source = dict()
+            obj = dict()
+            # 根据字段名称映射生成目标文档
+            for k in r:
+                if k == 'row_number':
+                    continue
+                if COLUMN_MAPPING.get(k) is not None:
+                    _source[COLUMN_MAPPING.get(k)] = r[k]
+                else:
+                    _source[k] = r[k]
             obj['_index'] = ES_INDEX
             obj['_type'] = ES_TYPE
             obj['_source'] = _source
+
             actions.append(obj)
 
         log("开始插入结果到ES...")
@@ -277,40 +313,24 @@ def run_job(job_config):
         "************************")
 
 
-result_tables = get_list(config.get("table", "tables"))
+result_tables = get_list(get_config_fallback(config, "table", "tables", fallback=""))
 for result in result_tables:
     job_conf = dict()
 
     job_conf['table'] = result
+    job_conf['column_mapping'] = get_map(get_list(get_config_fallback(config, result, "column_mapping", fallback="")))
+    job_conf['es_index'] = get_config_fallback(config, result, "es_index", fallback=DEFAULT_ES_INDEX)
+    job_conf['es_type'] = get_config_fallback(config, result, "es_type", fallback=result)
 
-    try:
-        job_conf['es_index'] = config.get(result, "es_index")
-    except:
-        job_conf['es_index'] = DEFAULT_ES_INDEX
-    try:
-        job_conf['page_size'] = int(config.get(result, "page_size"))
-    except:
-        job_conf['page_size'] = MAX_PAGE_SIZE
-    job_conf['page_size'] = min(int(job_conf['page_size']), MAX_PAGE_SIZE)
+    job_conf['page_size'] = min(int(get_config_fallback(config, result, "page_size", fallback=MAX_PAGE_SIZE)),
+                                MAX_PAGE_SIZE)
+    # 默认全量导表
+    job_conf['overwrite'] = get_config_fallback(config, result, "overwrite", fallback="true")
 
-    try:
-        job_conf['overwrite'] = config.get(result, "overwrite")
-    except:
-        job_conf['overwrite'] = "false"
-
-    try:
-        job_conf['hql_path'] = config.get(result, "hql_path")
-    except:
-        pass
-
-    try:
-        job_conf['es_type'] = config.get(result, "es_type")
-        job_conf['columns'] = config.get(result, "columns")
-    except:
-        log(result, "请至少为该结果表配置es_type和columns项，", "跳过该任务")
-        continue
-
+    job_conf['sql_path'] = get_config_fallback(config, result, "sql_path", fallback="")
     try:
         run_job(job_conf)
     except Exception as e:
         log(result, "执行job出错：", job_conf, ": ", e)
+
+big_data_conn.close()
