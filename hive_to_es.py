@@ -206,6 +206,7 @@ def run_job(job_config):
             return
     else:
         log("无SQL文件，直接导表数据")
+        # TODO 可选字段导表
         USER_SQL = "SELECT * FROM " + job_config['table']
 
     log("ES_INDEX: ", ES_INDEX)
