@@ -149,7 +149,11 @@ hive_conn = pyhs2.connect(host=config.get("hive", "host"),
                           database=config.get("hive", "database"))
 
 DEFAULT_ES_INDEX = config.get("es", "default_index")
-MAX_PAGE_SIZE = config.get("paging", "max_page_size")
+
+try:
+    MAX_PAGE_SIZE = config.get("paging", "max_page_size")
+except:
+    MAX_PAGE_SIZE = 30000
 
 
 def run_job(job_config):
