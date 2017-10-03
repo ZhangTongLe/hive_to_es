@@ -1,1 +1,0 @@
-SELECT `id`, `address` FROM staff
