@@ -181,7 +181,7 @@ big_data_conn = big_data_connection(host=config.get(by, "host"),
                                     )
 
 DEFAULT_ES_INDEX = config.get("es", "default_index")
-MAX_PAGE_SIZE = int(get_config_fallback(config, "paging", "max_page_size", fallback=30000))
+MAX_PAGE_SIZE = 30000
 
 
 def run_job(job_config):
@@ -193,28 +193,35 @@ def run_job(job_config):
     PAGE_SIZE = job_config["page_size"]
     ES_INDEX = job_config["es_index"]
     ES_TYPE = job_config["es_type"]
+    COLUMNS = job_config['columns']
     COLUMN_MAPPING = job_config['column_mapping']
     OVERWRITE = job_config["overwrite"]
+    SQL_PATH = job_config["sql_path"]
 
-    if len(job_config["sql_path"]) > 0:
-        SQL_PATH = job_config["sql_path"]
+    if len(SQL_PATH) > 0:
         log("SQL文件: ", SQL_PATH)
         try:
             USER_SQL = get_file_content(SQL_PATH).strip()
-        except:
-            log("读取SQL文件出错，退出")
+            if len(COLUMNS) > 0:
+                USER_SQL = "SELECT " + COLUMNS + " FROM (" + USER_SQL + ") AS columns_chosen"
+        except Exception as e:
+            log("读取SQL文件出错，退出: ", e)
             return
     else:
         log("无SQL文件，直接导表数据")
-        # TODO 可选字段导表
-        USER_SQL = "SELECT * FROM " + job_config['table']
+        if len(COLUMNS) > 0:
+            USER_SQL = "SELECT " + COLUMNS + " FROM " + job_config['table']
+            pass
+        else:
+            USER_SQL = "SELECT * FROM " + job_config['table']
 
     log("ES_INDEX: ", ES_INDEX)
     log("ES_TYPE: ", ES_TYPE)
     log("分页大小: ", PAGE_SIZE)
     log("是否全量：", OVERWRITE)
+    log("自选字段：", COLUMNS)
     log("字段名称映射：", COLUMN_MAPPING)
-    log("原始SQL内容: ", USER_SQL)
+    log("SQL内容: ", USER_SQL)
     if not (USER_SQL.startswith("select") or USER_SQL.startswith("SELECT")):
         log("只允许SELECT语句, 退出该任务")
         return
@@ -319,6 +326,7 @@ for result in result_tables:
     job_conf = dict()
 
     job_conf['table'] = result
+    job_conf['columns'] = get_config_fallback(config, result, "columns", fallback="")
     job_conf['column_mapping'] = get_map(get_list(get_config_fallback(config, result, "column_mapping", fallback="")))
     job_conf['es_index'] = get_config_fallback(config, result, "es_index", fallback=DEFAULT_ES_INDEX)
     job_conf['es_type'] = get_config_fallback(config, result, "es_type", fallback=result)
