@@ -128,7 +128,7 @@ def add_row_number_into_hql(hql):
     start_pos = hql.upper().find("FROM ")
     left = ql[:start_pos]
     right = ql[start_pos:]
-    left = left + ",ROW_NUMBER() OVER () AS row_number "
+    left = left + ",ROW_NUMBER() OVER () AS hive_to_es_row_number "
     return "SELECT * FROM(" + left + right + ")t_paging"
 
 
@@ -140,7 +140,8 @@ def add_paging_limit_into_hql(hql, start_row, to_row):
     :param to_row:
     :return:
     """
-    return add_row_number_into_hql(hql) + " WHERE row_number BETWEEN " + str(start_row) + " AND " + str(to_row)
+    return add_row_number_into_hql(hql) + " WHERE hive_to_es_row_number BETWEEN " + str(start_row) + " AND " + str(
+        to_row) + " ORDER BY hive_to_es_row_number"
 
 
 def get_config_fallback(conf, k, v, fallback):
@@ -225,33 +226,10 @@ def run_job(job_config):
     if not (USER_SQL.startswith("select") or USER_SQL.startswith("SELECT")):
         log("只允许SELECT语句, 退出该任务")
         return
-
     log(">>>>>>>>>>>>>>>初始化结束>>>>>>>>>>>>>>>")
 
     # 开始记录时间
     start_time = time.time()
-
-    prepare_sql = ("SELECT COUNT(*) AS c, MIN(row_number) AS m FROM (" + add_row_number_into_hql(USER_SQL) + ")t_count")
-    log("Prepare SQL: ", prepare_sql)
-    try:
-        log("开始获取总行数和分页起始行...")
-        pre_result = run_query(prepare_sql)
-        total_count = int(pre_result[0]['c'])
-        current_row_num = int(pre_result[0]['m'])
-
-        if total_count == 0:
-            log("数据结果为0，退出该任务")
-            return
-    except Exception as e:
-        log("获取分页信息SQL执行失败，退出该任务：", e)
-        return
-
-    page_count = int((total_count + PAGE_SIZE - 1) / PAGE_SIZE)
-
-    log("结果集合总数: ", total_count)
-    log("分页大小: ", PAGE_SIZE)
-    log("总页数: ", page_count)
-    log("起始行：", current_row_num)
 
     # es准备
     if es.indices.exists(index=ES_INDEX) is True:
@@ -269,9 +247,13 @@ def run_job(job_config):
         es.indices.create(index=ES_INDEX)
         log("已新创建index：", ES_INDEX)
 
+    current_row_num = 1
+    result_size = PAGE_SIZE
+    p = 1
+
     # 开始查询
-    for p in range(0, page_count):
-        log("==================第%s页开始===================" % (p + 1))
+    while result_size == PAGE_SIZE:
+        log("==================第%s页开始===================" % p)
         s = time.time()
         log("当前行: ", current_row_num)
 
@@ -285,18 +267,18 @@ def run_job(job_config):
         try:
             log("开始执行: ")
             log(final_sql)
-            hive_result = run_query(final_sql)
+            result_data = run_query(final_sql)
         except Exception as e:
             log(">>>>>>>>>>>>>>>SQL执行失败，结束该任务：", e, ">>>>>>>>>>>>>>>>>>")
             return
 
         actions = []
-        for r in hive_result:
+        for r in result_data:
             _source = dict()
             obj = dict()
             # 根据字段名称映射生成目标文档
             for k in r:
-                if k == 'row_number':
+                if k == 'hive_to_es_row_number':
                     continue
                 if COLUMN_MAPPING.get(k) is not None:
                     _source[COLUMN_MAPPING.get(k)] = r[k]
@@ -314,7 +296,10 @@ def run_job(job_config):
         log("插入ES结束...")
         e = time.time()
         log("该页查询时间：", s2t(e - s))
+
         current_row_num = current_row_num + PAGE_SIZE
+        result_size = len(result_data)
+        p = p + 1
 
     end_time = time.time()
     log("************************", job_config['table'], ": 全部结束，花费时间：", s2t(end_time - start_time),
