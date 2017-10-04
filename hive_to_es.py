@@ -118,29 +118,29 @@ def run_query(sql):
     return res_data
 
 
-def add_row_number_into_sql(sql):
+def add_row_number_into_hql(hql):
     """
-    拼接为支持分页的SQL
-    :param sql:
+    拼接为支持分页的HQL
+    :param hql:
     :return:
     """
-    ql = sql.lstrip()
-    start_pos = sql.upper().find("FROM ")
+    ql = hql.lstrip()
+    start_pos = hql.upper().find("FROM ")
     left = ql[:start_pos]
     right = ql[start_pos:]
     left = left + ",ROW_NUMBER() OVER () AS row_number "
     return "SELECT * FROM(" + left + right + ")t_paging"
 
 
-def add_paging_limit_into_sql(sql, start_row, to_row):
+def add_paging_limit_into_hql(hql, start_row, to_row):
     """
-    拼接为支持分页的SQL，加入分页信息
-    :param sql:
+    拼接为支持分页的HQL，加入分页信息
+    :param hql:
     :param start_row:
     :param to_row:
     :return:
     """
-    return add_row_number_into_sql(sql) + " WHERE row_number BETWEEN " + str(start_row) + " AND " + str(to_row)
+    return add_row_number_into_hql(hql) + " WHERE row_number BETWEEN " + str(start_row) + " AND " + str(to_row)
 
 
 def get_config_fallback(conf, k, v, fallback):
@@ -231,7 +231,7 @@ def run_job(job_config):
     # 开始记录时间
     start_time = time.time()
 
-    prepare_sql = ("SELECT COUNT(*) AS c, MIN(row_number) AS m FROM (" + add_row_number_into_sql(USER_SQL) + ")t_count")
+    prepare_sql = ("SELECT COUNT(*) AS c, MIN(row_number) AS m FROM (" + add_row_number_into_hql(USER_SQL) + ")t_count")
     log("Prepare SQL: ", prepare_sql)
     try:
         log("开始获取总行数和分页起始行...")
@@ -280,7 +280,7 @@ def run_job(job_config):
         log("开始行号: ", start_row)
         log("结束行号: ", to_row)
 
-        final_sql = add_paging_limit_into_sql(USER_SQL, start_row, to_row)
+        final_sql = add_paging_limit_into_hql(USER_SQL, start_row, to_row)
 
         try:
             log("开始执行: ")
