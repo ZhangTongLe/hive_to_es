@@ -118,20 +118,6 @@ def run_query(sql):
     return res_data
 
 
-def add_row_number_into_hql(hql):
-    """
-    拼接为支持分页的HQL
-    :param hql:
-    :return:
-    """
-    ql = hql.lstrip()
-    start_pos = hql.upper().find("FROM ")
-    left = ql[:start_pos]
-    right = ql[start_pos:]
-    left = left + ",ROW_NUMBER() OVER () AS hive_to_es_row_number "
-    return "SELECT * FROM(" + left + right + ")t_paging"
-
-
 def add_paging_limit_into_hql(hql, start_row, to_row):
     """
     拼接为支持分页的HQL，加入分页信息
@@ -140,8 +126,51 @@ def add_paging_limit_into_hql(hql, start_row, to_row):
     :param to_row:
     :return:
     """
-    return add_row_number_into_hql(hql) + " WHERE hive_to_es_row_number BETWEEN " + str(start_row) + " AND " + str(
-        to_row) + " ORDER BY hive_to_es_row_number"
+    ql = hql.lstrip()
+    start_pos = hql.upper().find("FROM ")
+    left = ql[:start_pos]
+    right = ql[start_pos:]
+    left = left + ", ROW_NUMBER() OVER () AS row_number_flag "
+    with_row_number_hql = "SELECT * FROM(" + left + right + ")t_paging"
+
+    return with_row_number_hql + " WHERE row_number_flag BETWEEN " + str(start_row) + " AND " + str(
+        to_row) + " ORDER BY row_number_flag"
+
+
+def add_paging_limit_into_impala_sql(impala_sql, start_row, to_row):
+    """
+    拼接为支持分页的Impala-SQL，加入分页信息
+    :param impala_sql:
+    :param start_row:
+    :param to_row:
+    :return:
+    """
+    ql = impala_sql.lstrip()
+    start_pos = impala_sql.upper().find("FROM ")
+    left = ql[:start_pos]
+    right = ql[start_pos:]
+    left = left + ", 0 AS `row_number_flag` "
+    with_flag_sql = "SELECT * FROM(" + left + right + ")t_paging"
+
+    page_size = to_row - start_row + 1
+    return with_flag_sql + " ORDER BY `row_number_flag` LIMIT " + str(page_size) + " OFFSET " + str(start_row - 1)
+
+
+def get_paging_supported_sql(sql, start_row, to_row, platform):
+    """
+    获得支持分页信息的SQL
+    :param sql:
+    :param start_row: 起始行最小是1
+    :param to_row:
+    :param platform: hive or impala
+    :return:
+    """
+    if platform == "hive":
+        return add_paging_limit_into_hql(sql, start_row, to_row)
+    elif platform == "impala":
+        return add_paging_limit_into_impala_sql(sql, start_row, to_row)
+    else:
+        return ""
 
 
 def get_config_fallback(conf, k, v, fallback):
@@ -171,14 +200,14 @@ es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
                    http_auth=(config.get("es", "username"),
                               config.get("es", "password")))
 
-# TODO 引入impala渠道导数据
-by = get_config_fallback(config, "es", "by", fallback="hive")
-log("导数据途径：", by)
-big_data_conn = big_data_connection(host=config.get(by, "host"),
-                                    port=config.get(by, "port"),
-                                    database=config.get(by, "database"),
-                                    user=get_config_fallback(config, by, "user", fallback=""),
-                                    auth_mechanism=get_config_fallback(config, by, "auth_mechanism", fallback=""),
+# 导数据途经默认hive
+BY = get_config_fallback(config, "es", "by", fallback="hive")
+log("导数据途径：", BY)
+big_data_conn = big_data_connection(host=config.get(BY, "host"),
+                                    port=config.get(BY, "port"),
+                                    database=config.get(BY, "database"),
+                                    user=get_config_fallback(config, BY, "user", fallback=""),
+                                    auth_mechanism=get_config_fallback(config, BY, "auth_mechanism", fallback=""),
                                     )
 
 DEFAULT_ES_INDEX = config.get("es", "default_index")
@@ -231,22 +260,6 @@ def run_job(job_config):
     # 开始记录时间
     start_time = time.time()
 
-    # es准备
-    if es.indices.exists(index=ES_INDEX) is True:
-        if OVERWRITE == "true":
-            log("全量添加结果集")
-            # 删除type下所有数据
-            es.delete_by_query(index=ES_INDEX,
-                               body={"query": {"match_all": {}}},
-                               doc_type=ES_TYPE,
-                               params={"conflicts": "proceed"})
-        else:
-            log("增量添加结果集")
-            pass
-    else:
-        es.indices.create(index=ES_INDEX)
-        log("已新创建index：", ES_INDEX)
-
     current_row_num = 1
     result_size = PAGE_SIZE
     p = 1
@@ -262,7 +275,7 @@ def run_job(job_config):
         log("开始行号: ", start_row)
         log("结束行号: ", to_row)
 
-        final_sql = add_paging_limit_into_hql(USER_SQL, start_row, to_row)
+        final_sql = get_paging_supported_sql(USER_SQL, start_row, to_row, platform=BY)
 
         try:
             log("开始执行: ")
@@ -272,13 +285,30 @@ def run_job(job_config):
             log(">>>>>>>>>>>>>>>SQL执行失败，结束该任务：", e, ">>>>>>>>>>>>>>>>>>")
             return
 
+        if p == 1:
+            # es准备
+            if es.indices.exists(index=ES_INDEX) is True:
+                if OVERWRITE == "true":
+                    log("全量添加结果集")
+                    # 删除type下所有数据
+                    es.delete_by_query(index=ES_INDEX,
+                                       body={"query": {"match_all": {}}},
+                                       doc_type=ES_TYPE,
+                                       params={"conflicts": "proceed"})
+                else:
+                    log("增量添加结果集")
+                    pass
+            else:
+                es.indices.create(index=ES_INDEX)
+                log("已新创建index：", ES_INDEX)
+
         actions = []
         for r in result_data:
             _source = dict()
             obj = dict()
             # 根据字段名称映射生成目标文档
             for k in r:
-                if k == 'hive_to_es_row_number':
+                if k == 'row_number_flag':
                     continue
                 if COLUMN_MAPPING.get(k) is not None:
                     _source[COLUMN_MAPPING.get(k)] = r[k]
