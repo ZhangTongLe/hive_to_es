@@ -56,7 +56,7 @@ sql_path = ./sql/hql_test1.sql
 [my_result_b]
 sql_path = ./sql/hql_test2.sql
 
-# 如需要对结果集作出更多配置，可进行如下操作
+# 如需要对结果集作出更多配置，可进行如下可选配置
 
 ;配置头为对应要导出的表的名称
 ;[student]
@@ -77,7 +77,7 @@ sql_path = ./sql/hql_test2.sql
 
 ;分页查询配置，为了防止一次查询出所有数据，导致结果集过大，导致查询时内存吃不消，无分页配置时默认分页大小30000
 ;page_size = 1000
-;导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认=false，清空原有type中数据，全量导入ES。
+;导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认=true，清空原有type中数据，全量导入ES。
 ;overwrite = false
 
 
