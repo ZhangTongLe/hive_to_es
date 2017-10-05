@@ -23,7 +23,6 @@ except:
 
 """
 Created by tangqingchang on 2017-09-02
-环境: python2 
 python hive_to_es.py config=<配置文件路径>
 """
 
@@ -118,14 +117,17 @@ def run_query(sql):
     return res_data
 
 
-def add_paging_limit_into_hql(hql, start_row, to_row):
+def add_paging_and_where_info_into_hql(**kwargs):
     """
     拼接为支持分页的HQL，加入分页信息
-    :param hql:
-    :param start_row:
-    :param to_row:
+    :param kwargs
     :return:
     """
+    hql = kwargs['hql']
+    start_row = kwargs['start_row']
+    to_row = kwargs['to_row']
+    where = kwargs.get("where", "")
+
     ql = hql.lstrip()
     start_pos = hql.upper().find("FROM ")
     left = ql[:start_pos]
@@ -133,18 +135,27 @@ def add_paging_limit_into_hql(hql, start_row, to_row):
     left = left + ", ROW_NUMBER() OVER () AS row_number_flag "
     with_row_number_hql = "SELECT * FROM(" + left + right + ")t_paging"
 
-    return with_row_number_hql + " WHERE row_number_flag BETWEEN " + str(start_row) + " AND " + str(
-        to_row) + " ORDER BY row_number_flag"
+    if len(where) > 0:
+        return with_row_number_hql + " WHERE " + where + " AND row_number_flag BETWEEN " + str(
+            start_row) + " AND " + str(
+            to_row) + " ORDER BY row_number_flag"
+    else:
+        return with_row_number_hql + " WHERE row_number_flag BETWEEN " + str(start_row) + " AND " + str(
+            to_row) + " ORDER BY row_number_flag"
 
 
-def add_paging_limit_into_impala_sql(impala_sql, start_row, to_row):
+def add_paging_and_where_info_into_impala_sql(**kwargs):
     """
     拼接为支持分页的Impala-SQL，加入分页信息
-    :param impala_sql:
-    :param start_row:
-    :param to_row:
+    :param kwargs
     :return:
     """
+
+    impala_sql = kwargs['impala_sql']
+    start_row = kwargs['start_row']
+    to_row = kwargs['to_row']
+    where = kwargs.get("where", "")
+
     ql = impala_sql.lstrip()
     start_pos = impala_sql.upper().find("FROM ")
     left = ql[:start_pos]
@@ -153,10 +164,15 @@ def add_paging_limit_into_impala_sql(impala_sql, start_row, to_row):
     with_flag_sql = "SELECT * FROM(" + left + right + ")t_paging"
 
     page_size = to_row - start_row + 1
-    return with_flag_sql + " ORDER BY `row_number_flag` LIMIT " + str(page_size) + " OFFSET " + str(start_row - 1)
+
+    if len(where) > 0:
+        return with_flag_sql + " WHERE " + where + " ORDER BY `row_number_flag` LIMIT " + str(
+            page_size) + " OFFSET " + str(start_row - 1)
+    else:
+        return with_flag_sql + " ORDER BY `row_number_flag` LIMIT " + str(page_size) + " OFFSET " + str(start_row - 1)
 
 
-def get_paging_supported_sql(sql, start_row, to_row, platform):
+def get_paging_and_where_supported_sql(sql, start_row, to_row, where, platform):
     """
     获得支持分页信息的SQL
     :param sql:
@@ -166,9 +182,10 @@ def get_paging_supported_sql(sql, start_row, to_row, platform):
     :return:
     """
     if platform == "hive":
-        return add_paging_limit_into_hql(sql, start_row, to_row)
+        return add_paging_and_where_info_into_hql(hql=sql, start_row=start_row, to_row=to_row, where=where)
     elif platform == "impala":
-        return add_paging_limit_into_impala_sql(sql, start_row, to_row)
+        return add_paging_and_where_info_into_impala_sql(impala_sql=sql, start_row=start_row, to_row=to_row,
+                                                         where=where)
     else:
         return ""
 
@@ -209,8 +226,8 @@ big_data_conn = big_data_connection(host=config.get(BY, "host"),
                                     user=get_config_fallback(config, BY, "user", fallback=""),
                                     auth_mechanism=get_config_fallback(config, BY, "auth_mechanism", fallback=""),
                                     )
-
-DEFAULT_ES_INDEX = config.get("es", "default_index")
+# 导入ES的index默认使用数据库名称
+DEFAULT_ES_INDEX = get_config_fallback(config, "es", "default_index", fallback=config.get(BY, "database"))
 MAX_PAGE_SIZE = 30000
 
 
@@ -224,6 +241,7 @@ def run_job(job_config):
     ES_INDEX = job_config["es_index"]
     ES_TYPE = job_config["es_type"]
     COLUMNS = job_config['columns']
+    WHERE = job_config['where']
     COLUMN_MAPPING = job_config['column_mapping']
     OVERWRITE = job_config["overwrite"]
     SQL_PATH = job_config["sql_path"]
@@ -250,6 +268,7 @@ def run_job(job_config):
     log("分页大小: ", PAGE_SIZE)
     log("是否全量：", OVERWRITE)
     log("自选字段：", COLUMNS)
+    log("自定义where条件：", WHERE)
     log("字段名称映射：", COLUMN_MAPPING)
     log("SQL内容: ", USER_SQL)
     if not (USER_SQL.startswith("select") or USER_SQL.startswith("SELECT")):
@@ -275,7 +294,7 @@ def run_job(job_config):
         log("开始行号: ", start_row)
         log("结束行号: ", to_row)
 
-        final_sql = get_paging_supported_sql(USER_SQL, start_row, to_row, platform=BY)
+        final_sql = get_paging_and_where_supported_sql(USER_SQL, start_row, to_row, where=WHERE, platform=BY)
 
         try:
             log("开始执行: ")
@@ -352,6 +371,8 @@ for result in result_tables:
     job_conf['overwrite'] = get_config_fallback(config, result, "overwrite", fallback="true")
 
     job_conf['sql_path'] = get_config_fallback(config, result, "sql_path", fallback="")
+
+    job_conf['where'] = get_config_fallback(config, result, "where", fallback="")
     try:
         run_job(job_conf)
     except Exception as e:

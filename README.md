@@ -1,18 +1,22 @@
 同步hive数据到Elasticsearch的小工具
 
+可选 全量（默认） 和 增量
+
 同时支持编写SQL产生中间结果表，再导入到ES
 <h3>最新支持从impala渠道导数据，极大提升导数据速度</h3>
 
 采用分页查询机制，数据集过多时不会撑爆内存
 
-公司的数据分析、产品、运营经常需要看各种报表，多是分析统计类需求，类SQL语言适合做具有筛选逻辑的数据
-（有时候有的数据无法从业务主库中查出来，只能直接前端埋点），
-Elasticsearch适合做统计，而且结合Kibana可以直接生成报表！
+公司的数据分析、产品、运营经常需要看各种报表，多是分析统计类需求，SQL学习成本低，人人都会，适合做数据的主要筛选逻辑，
+Elasticsearch适合做统计分析，结合Kibana可以直接生成报表！
 
 耗时查询不宜直接在线上查，还好公司已经实现每天在访问低谷期同步线上数据到Hadoop HDFS 大数据中心。
     
 对这类常有的统计类需求，我的做法是先用HQL或者ImpalaSQL做筛选逻辑，ES拿到数据再进行聚合统计，如每天、每月、某人的数据。
 kibana再生成各类可视化图表，最终数据直观展现！
+
+Elastic官方已经有了Hive integration的同步工具，但是由于使用的hive版本太低，ES又已经是最新版本，
+尝试使用hive integration时一直报错，为尽快适应当前需求手动造了该轮子。
 
 力求简洁的配置，方便使用
 
@@ -32,8 +36,9 @@ hosts = 192.168.3.100:9200
 username = elastic
 password = 888888
 
-;默认存入的es的index，若导出表没配置es_index，默认存入该index
-default_index = tqc_ttt
+;存入的es的index默认等于hive或impala中的数据库名称
+;在这里可配置自定义全局index名，所有导出表将默认导到该index
+;default_index = tqc_ttt
 
 ;数据平台，默认是hive
 ;by = impala
@@ -82,15 +87,20 @@ sql_path = ./sql/hql_test2.sql
 ;column_mapping = name=name_in_es,sex=sex_in_es
 
 ;限定导出的字段
-;columns = name,address,sex
+;columns = name,age,address,sex
+
+;where条件语句，导表时限定字段数据值条件
+;where = age>20 AND name LIKE 'abc%'
 
 ;通过编写HQL或ImpalaSQL获得新的结果集表导入ES时的SQL文件路径，目前还不支持带有注释的SQL
 ;sql_path = ./sql/hql_test1.sql
 
-;分页查询配置，为了防止一次查询出所有数据，导致结果集过大，导致查询时内存吃不消，无分页配置时默认分页大小30000
+;分页查询配置，为了防止一次查询出所有数据，导致结果集过大，内存吃不消，无分页配置时默认分页大小30000
 ;page_size = 1000
-;导入数据前是否清空该type下所有数据，相当于全量导入结果集，默认=true，清空原有type中数据，全量导入ES。
+
+;全量 & 增量：导入数据前是否清空该type下所有数据，默认=true：清空原有type中数据，再把新数据导入ES（全量更新数据）。
 ;overwrite = false
+
 
 
 ```
