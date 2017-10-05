@@ -1,4 +1,4 @@
-<h3>同步hive数据到Elasticsearch的小工具
+<h3>同步hive数据到Elasticsearch的小工具</h3>
 
 可选 全量（默认） 和 增量
 
