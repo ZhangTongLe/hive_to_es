@@ -129,7 +129,7 @@ def add_paging_and_where_info_into_hql(**kwargs):
     where = kwargs.get("where", "")
 
     ql = hql.lstrip()
-    start_pos = hql.upper().find("FROM ")
+    start_pos = hql.upper().find("FROM")
     left = ql[:start_pos]
     right = ql[start_pos:]
     left = left + ", ROW_NUMBER() OVER () AS row_number_flag "
@@ -157,7 +157,7 @@ def add_paging_and_where_info_into_impala_sql(**kwargs):
     where = kwargs.get("where", "")
 
     ql = impala_sql.lstrip()
-    start_pos = impala_sql.upper().find("FROM ")
+    start_pos = impala_sql.upper().find("FROM")
     left = ql[:start_pos]
     right = ql[start_pos:]
     left = left + ", 0 AS `row_number_flag` "
