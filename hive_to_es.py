@@ -208,6 +208,8 @@ def get_config_fallback(conf, k, v, fallback):
 
 if len(sys.argv) < 2:
     log("参数不足")
+    print("例子：")
+    print("python hive_to_es.py config=<配置文件路径.ini>")
     exit(0)
 
 params_dict = get_map(sys.argv[1:])
