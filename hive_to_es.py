@@ -224,7 +224,7 @@ es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
 BY = get_config_fallback(config, "es", "by", fallback="hive")
 log("导数据途径：", BY)
 big_data_conn = big_data_connection(host=config.get(BY, "host"),
-                                    port=config.get(BY, "port"),
+                                    port=int(config.get(BY, "port")),
                                     database=config.get(BY, "database"),
                                     user=get_config_fallback(config, BY, "user", fallback=""),
                                     auth_mechanism=get_config_fallback(config, BY, "auth_mechanism", fallback=""),
