@@ -104,4 +104,3 @@ sql_path = ./sql/hql_test2.sql
 
 ```
 
-**TODO 添加命令行读表**
