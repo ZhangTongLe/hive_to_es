@@ -20,7 +20,7 @@ kibana再生成各类可视化图表，最终数据直观展现！
 脚本使用说明<br>
 
 环境: Python2 Python3 <br>
-命令 #python hive_to_es.py config=<配置文件路径><br>
+命令 python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]<br>
 
 
 配置文件使用说明： 使用.ini后缀的配置文件<br>

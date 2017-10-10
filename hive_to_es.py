@@ -24,7 +24,7 @@ except:
 
 """
 Created by tangqingchang on 2017-09-02
-python hive_to_es.py config=<配置文件路径>
+python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]
 """
 
 
@@ -44,15 +44,18 @@ def get_map(param_list):
     return param_dict
 
 
-def get_list(data, f=','):
+def get_list(s, f=','):
     """
     分割字符串为数组
-    :param data: 字符串
+    :param s: 字符串
     :param f: 分隔符，默认是','
     :return:
     """
-    ls = data.split(f)
-    return ls
+    if (not s) or (not s.strip()) or (s.strip() == ""):
+        return []
+    else:
+        ls = s.split(f)
+        return ls
 
 
 logging.basicConfig(level=logging.INFO)
@@ -208,7 +211,7 @@ def config(k, v, fallback=None):
 if len(sys.argv) < 2:
     log("参数不足")
     print("例子：")
-    print("python hive_to_es.py config=<配置文件路径.ini>")
+    print("python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]")
     exit(0)
 
 params_dict = get_map(sys.argv[1:])
@@ -365,7 +368,11 @@ def run_job(job_config):
         "************************")
 
 
-result_tables = get_list(config("table", "tables", fallback=""))
+if params_dict.get('tables') is not None:
+    result_tables = get_list(params_dict['tables'])
+else:
+    result_tables = get_list(config("table", "tables", fallback=""))
+
 for result in result_tables:
     job_conf = dict()
 
@@ -390,6 +397,3 @@ for result in result_tables:
         log(result, "执行job出错：", job_conf, ": ", e)
 
 big_data_conn.close()
-
-
-# TODO 添加命令行读表
