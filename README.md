@@ -82,6 +82,9 @@ sql_path = ./sql/hql_test2.sql
 ;限定导出的字段
 ;columns = date,name,age,address,sex
 
+;选择一个字段作为ES文档中的id
+;id_column = student_id
+
 ;字段名映射，这里hive表中的name字段映射为ES中的name_in_es，sex字段映射为ES中的sex_in_es...
 ;column_mapping = date=@timestamp,name=name_in_es,sex=sex_in_es
 
@@ -100,3 +103,6 @@ sql_path = ./sql/hql_test2.sql
 
 
 ```
+
+**TODO 添加id column**<br>
+**TODO 添加命令行读表**

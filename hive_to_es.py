@@ -191,17 +191,16 @@ def get_paging_and_where_supported_sql(sql, start_row, to_row, where, platform):
         return ""
 
 
-def get_config_fallback(conf, k, v, fallback):
+def config(k, v, fallback=None):
     """
     获取不到配置信息时返回fallback
-    :param conf:
     :param k:
     :param v:
     :param fallback:
     :return:
     """
     try:
-        return conf.get(k, v)
+        return main_config.get(k, v)
     except:
         return fallback
 
@@ -214,23 +213,23 @@ if len(sys.argv) < 2:
 
 params_dict = get_map(sys.argv[1:])
 
-config = ConfigParser.ConfigParser()
-config.readfp(open(params_dict['config'], mode='r+'))
-es = Elasticsearch(hosts=get_list(config.get("es", "hosts")),
-                   http_auth=(config.get("es", "username"),
-                              config.get("es", "password")))
+main_config = ConfigParser.ConfigParser()
+main_config.readfp(codecs.open(params_dict['config'], mode='r+', encoding='utf-8'))
+es = Elasticsearch(hosts=get_list(config("es", "hosts")),
+                   http_auth=(config("es", "username"),
+                              config("es", "password")))
 
 # 导数据途经默认hive
-BY = get_config_fallback(config, "es", "by", fallback="hive")
+BY = config("es", "by", fallback="hive")
 log("导数据途径：", BY)
-big_data_conn = big_data_connection(host=config.get(BY, "host"),
-                                    port=int(config.get(BY, "port")),
-                                    database=config.get(BY, "database"),
-                                    user=get_config_fallback(config, BY, "user", fallback=""),
-                                    auth_mechanism=get_config_fallback(config, BY, "auth_mechanism", fallback=""),
+big_data_conn = big_data_connection(host=config(BY, "host"),
+                                    port=int(config(BY, "port")),
+                                    database=config(BY, "database"),
+                                    user=config(BY, "user", fallback=""),
+                                    auth_mechanism=config(BY, "auth_mechanism", fallback=""),
                                     )
 # 导入ES的index默认使用数据库名称
-DEFAULT_ES_INDEX = get_config_fallback(config, "es", "default_index", fallback=config.get(BY, "database"))
+DEFAULT_ES_INDEX = config("es", "default_index", fallback=config(BY, "database"))
 MAX_PAGE_SIZE = 30000
 
 
@@ -244,6 +243,7 @@ def run_job(job_config):
     ES_INDEX = job_config["es_index"]
     ES_TYPE = job_config["es_type"]
     COLUMNS = job_config['columns']
+    ID_COLUMN = job_config['id_column']
     WHERE = job_config['where']
     COLUMN_MAPPING = job_config['column_mapping']
     OVERWRITE = job_config["overwrite"]
@@ -271,6 +271,7 @@ def run_job(job_config):
     log("分页大小: ", PAGE_SIZE)
     log("是否全量：", OVERWRITE)
     log("自选字段：", COLUMNS)
+    log("ID_COLUMN：", ID_COLUMN)
     log("自定义where条件：", WHERE)
     log("字段名称映射：", COLUMN_MAPPING)
     log("SQL内容: ", USER_SQL)
@@ -330,7 +331,7 @@ def run_job(job_config):
             obj = dict()
             # 根据字段名称映射生成目标文档
             for k in r:
-                if k == 'row_number_flag':
+                if k == 'row_number_flag' or k == ID_COLUMN:
                     continue
                 if COLUMN_MAPPING.get(k) is not None:
                     _source[COLUMN_MAPPING.get(k)] = r[k]
@@ -339,6 +340,12 @@ def run_job(job_config):
             obj['_index'] = ES_INDEX
             obj['_type'] = ES_TYPE
             obj['_source'] = _source
+
+            try:
+                if len(ID_COLUMN) > 0:
+                    obj['_id'] = r[ID_COLUMN]
+            except:
+                pass
 
             actions.append(obj)
 
@@ -358,27 +365,31 @@ def run_job(job_config):
         "************************")
 
 
-result_tables = get_list(get_config_fallback(config, "table", "tables", fallback=""))
+result_tables = get_list(config("table", "tables", fallback=""))
 for result in result_tables:
     job_conf = dict()
 
     job_conf['table'] = result
-    job_conf['columns'] = get_config_fallback(config, result, "columns", fallback="")
-    job_conf['column_mapping'] = get_map(get_list(get_config_fallback(config, result, "column_mapping", fallback="")))
-    job_conf['es_index'] = get_config_fallback(config, result, "es_index", fallback=DEFAULT_ES_INDEX)
-    job_conf['es_type'] = get_config_fallback(config, result, "es_type", fallback=result)
+    job_conf['columns'] = config(result, "columns", fallback="")
+    job_conf['id_column'] = config(result, "id_column", fallback="")
+    job_conf['column_mapping'] = get_map(get_list(config(result, "column_mapping", fallback="")))
+    job_conf['es_index'] = config(result, "es_index", fallback=DEFAULT_ES_INDEX)
+    job_conf['es_type'] = config(result, "es_type", fallback=result)
 
-    job_conf['page_size'] = min(int(get_config_fallback(config, result, "page_size", fallback=MAX_PAGE_SIZE)),
+    job_conf['page_size'] = min(int(config(result, "page_size", fallback=MAX_PAGE_SIZE)),
                                 MAX_PAGE_SIZE)
     # 默认全量导表
-    job_conf['overwrite'] = get_config_fallback(config, result, "overwrite", fallback="true")
+    job_conf['overwrite'] = config(result, "overwrite", fallback="true")
 
-    job_conf['sql_path'] = get_config_fallback(config, result, "sql_path", fallback="")
+    job_conf['sql_path'] = config(result, "sql_path", fallback="")
 
-    job_conf['where'] = get_config_fallback(config, result, "where", fallback="")
+    job_conf['where'] = config(result, "where", fallback="")
     try:
         run_job(job_conf)
     except Exception as e:
         log(result, "执行job出错：", job_conf, ": ", e)
 
 big_data_conn.close()
+
+
+# TODO 添加命令行读表
