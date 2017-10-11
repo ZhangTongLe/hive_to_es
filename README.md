@@ -8,7 +8,6 @@
 - 采用分页查询机制，数据集过多时不会撑爆内存；
 - 我实习期的公司的数据分析、产品、运营经常需要看各种报表，多是分析统计类需求，Elasticsearch适合做统计分析，结合Kibana可以直接生成报表！
 对这类常有的统计类需求，我的通常做法是从hive数据仓库导数据表到ES，或者先用HQL或ImpalaSQL筛选出结果表，ES拿到数据再进行聚合统计，如(Date Histogram)每天、每周、每月、某人的数据。
-
 - kibana再生成各类可视化图表，最终数据直观展现！
 
 ***Elastic官方已经有了Hive integration的同步工具，但是由于使用的hive版本太低，ES又已经是最新版本，
@@ -17,7 +16,7 @@
 - 力求简洁的配置，方便使用。
 
 
-脚本使用说明
+脚本使用说明:
 
 - 环境: Python2 Python3 
 - 命令 python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]
