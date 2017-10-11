@@ -1,29 +1,29 @@
-<h3>同步hive数据到Elasticsearch的工具</h3>
-可选 全量（默认） 和 增量；
-同时支持编写SQL产生中间结果表，再导入到ES；
+同步hive数据到Elasticsearch的工具
+===============================
 
-<h3>已经支持从impala渠道导数据，极大提升导数据速度</h3>
-采用分页查询机制，数据集过多时不会撑爆内存；
+- 可选 全量（默认） 和 增量；
+- 同时支持编写SQL产生中间结果表，再导入到ES；
 
-我实习期的公司的数据分析、产品、运营经常需要看各种报表，多是分析统计类需求，Elasticsearch适合做统计分析，结合Kibana可以直接生成报表！
+### 已经支持从impala渠道导数据，极大提升导数据速度 
+- 采用分页查询机制，数据集过多时不会撑爆内存；
+- 我实习期的公司的数据分析、产品、运营经常需要看各种报表，多是分析统计类需求，Elasticsearch适合做统计分析，结合Kibana可以直接生成报表！
 对这类常有的统计类需求，我的通常做法是从hive数据仓库导数据表到ES，或者先用HQL或ImpalaSQL筛选出结果表，ES拿到数据再进行聚合统计，如(Date Histogram)每天、每周、每月、某人的数据。
 
-kibana再生成各类可视化图表，最终数据直观展现！
+- kibana再生成各类可视化图表，最终数据直观展现！
 
-*Elastic官方已经有了Hive integration的同步工具，但是由于使用的hive版本太低，ES又已经是最新版本，
-尝试使用hive integration时一直报错，为尽快适应当前需求手动造了该轮子。*
+***Elastic官方已经有了Hive integration的同步工具，但是由于使用的hive版本太低，ES又已经是最新版本，
+尝试使用hive integration时一直报错，为尽快适应当前需求手动造了该轮子。***
 
-力求简洁的配置，方便使用。
-
-
-<br>
-脚本使用说明<br>
-
-环境: Python2 Python3 <br>
-命令 python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]<br>
+- 力求简洁的配置，方便使用。
 
 
-配置文件使用说明： 使用.ini后缀的配置文件<br>
+脚本使用说明
+
+- 环境: Python2 Python3 
+- 命令 python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]
+
+
+配置文件使用说明： 使用.ini后缀的配置文件
 
 ```ini
 ;Elasticsearch地址(有多节点，地址用逗号','隔开)、用户名、密码
