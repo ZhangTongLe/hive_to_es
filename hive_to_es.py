@@ -27,6 +27,7 @@ Created by tangqingchang on 2017-09-02
 python hive_to_es.py config=<配置文件路径.ini> [可选，需要导入的表: tables=table1,table2...]
 """
 
+# TODO: 使用多线程
 
 def get_map(param_list):
     """
